@@ -122,6 +122,13 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Disable text selection globally */
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    /* Disable touch callout on iOS */
+    -webkit-touch-callout: none;
   }
 
   body {

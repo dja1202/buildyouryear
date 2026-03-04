@@ -1,7 +1,7 @@
 
-  # Bingo Your Year (upgraded)
+  # Bingo Your Year ver 2
 
-  This is a code bundle for Bingo Your Year (upgraded). The original project is available at https://www.figma.com/design/GH1z08PVnxZ2SjGFjoNhGd/Bingo-Your-Year--upgraded-.
+  This is a code bundle for Bingo Your Year ver 2. The original project is available at https://www.figma.com/design/GH1z08PVnxZ2SjGFjoNhGd/Bingo-Your-Year-ver-2.
 
   ## Running the code
 

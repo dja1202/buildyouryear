@@ -13,7 +13,6 @@ import {
   Smile,
   RotateCcw,
   RotateCw,
-  Type,
 } from "lucide-react";
 import { ColorPickerModal } from "./ColorPickerModal";
 import type { BingoSquare, CanvasObject } from "../App";
@@ -26,43 +25,27 @@ const STICKERS = [
   "🎃","🎄","🎆","🌸","🐉","🦁","🐬","🌮","☕","🎠",
 ];
 
-type ToolType = "brush" | "eraser" | "sticker" | "text";
+type ToolType = "brush" | "eraser" | "sticker";
 
-// ─── TextObjectItem ────────────────────────────────────────────────────
+// ─── StickerObjectItem ────────────────────────────────────────────────────
 interface ObjectItemProps {
   obj: CanvasObject;
   containerRef: React.RefObject<HTMLDivElement | null>;
   isSelected: boolean;
-  isEditing: boolean;
   onSelect: () => void;
   onUpdate: (u: Partial<CanvasObject>) => void;
   onDelete: () => void;
-  onStartEdit: () => void;
-  onEndEdit: () => void;
 }
 
-function ObjectItem({
+function StickerObjectItem({
   obj,
   containerRef,
   isSelected,
-  isEditing,
   onSelect,
   onUpdate,
   onDelete,
-  onStartEdit,
-  onEndEdit,
 }: ObjectItemProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
-
   const handleDragPointerDown = (e: React.PointerEvent) => {
-    if (isEditing) return;
     e.preventDefault();
     e.stopPropagation();
     onSelect();
@@ -108,31 +91,6 @@ function ObjectItem({
     window.addEventListener("pointerup", onUp);
   };
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    if (obj.type === "text") {
-      e.preventDefault();
-      e.stopPropagation();
-      onStartEdit();
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onUpdate({ content: e.target.value });
-  };
-
-  const handleInputBlur = () => {
-    onEndEdit();
-  };
-
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      onEndEdit();
-    }
-    if (e.key === "Escape") {
-      onEndEdit();
-    }
-  };
-
   return (
     <div
       style={{
@@ -140,58 +98,31 @@ function ObjectItem({
         left: `${obj.x * 100}%`,
         top: `${obj.y * 100}%`,
         transform: "translate(-50%, -50%)",
-        cursor: isEditing ? "text" : "move",
-        userSelect: isEditing ? "text" : "none",
+        cursor: "move",
+        userSelect: "none",
         touchAction: "none",
         zIndex: isSelected ? 20 : 10,
       }}
-      onPointerDown={isEditing ? undefined : handleDragPointerDown}
-      onDoubleClick={handleDoubleClick}
+      onPointerDown={handleDragPointerDown}
     >
-      {/* Content */}
-      {isEditing && obj.type === "text" ? (
-        <input
-          ref={inputRef}
-          type="text"
-          value={obj.content}
-          onChange={handleInputChange}
-          onBlur={handleInputBlur}
-          onKeyDown={handleInputKeyDown}
-          style={{
-            fontSize: obj.size,
-            fontFamily: "Caveat, cursive",
-            lineHeight: 1,
-            whiteSpace: "nowrap",
-            outline: "2px solid #dba1a2",
-            outlineOffset: 2,
-            borderRadius: 4,
-            padding: "2px 6px",
-            background: "rgba(255,255,255,0.9)",
-            border: "none",
-            color: obj.color || "#2D2A32",
-            minWidth: "60px",
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            fontSize: obj.size,
-            fontFamily: obj.type === "text" ? "Caveat, cursive" : "serif",
-            lineHeight: 1,
-            whiteSpace: "nowrap",
-            outline: isSelected ? "1.5px dashed #dba1a2" : "none",
-            outlineOffset: 5,
-            borderRadius: 4,
-            padding: "1px 3px",
-            color: obj.type === "text" ? (obj.color || "#2D2A32") : "inherit",
-          }}
-        >
-          {obj.content}
-        </div>
-      )}
+      {/* Sticker Content */}
+      <div
+        style={{
+          fontSize: obj.size,
+          fontFamily: "serif",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          outline: isSelected ? "1.5px dashed #dba1a2" : "none",
+          outlineOffset: 5,
+          borderRadius: 4,
+          padding: "1px 3px",
+        }}
+      >
+        {obj.content}
+      </div>
 
       {/* Selection handles */}
-      {isSelected && !isEditing && (
+      {isSelected && (
         <>
           {/* Delete button */}
           <button
@@ -272,14 +203,12 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     () => square.canvasObjects ?? []
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
   // Color picker modal state
-  const [textColor, setTextColor] = useState("#2D2A32");
   const [showColorModal, setShowColorModal] = useState(false);
 
   // ── Canvas setup ──────────────────────────────────────────────────────────
@@ -377,21 +306,23 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const handleCanvasClick = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (tool === "text") {
-      e.preventDefault();
-      const rect = containerRef.current!.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.height;
-      addTextObject(x, y);
-    }
-  };
+  // Track active pointer type for palm rejection
+  const activePointerTypeRef = useRef<string | null>(null);
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const isDrawTool = tool === "brush" || tool === "eraser";
-    if (!isDrawTool) {
-      handleCanvasClick(e);
+    if (!isDrawTool) return;
+    
+    // Palm rejection: If a pen is active and this is a touch, ignore it
+    if (activePointerTypeRef.current === "pen" && e.pointerType === "touch") {
       return;
+    }
+    
+    // Set active pointer type (pen takes priority)
+    if (e.pointerType === "pen") {
+      activePointerTypeRef.current = "pen";
+    } else if (!activePointerTypeRef.current) {
+      activePointerTypeRef.current = e.pointerType;
     }
     
     e.preventDefault();
@@ -417,6 +348,11 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     const isDrawTool = tool === "brush" || tool === "eraser";
     if (!isDrawTool) return;
     
+    // Palm rejection: Ignore touch events if pen is active
+    if (activePointerTypeRef.current === "pen" && e.pointerType === "touch") {
+      return;
+    }
+    
     e.preventDefault();
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -440,29 +376,16 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
     lastPtRef.current = null;
+    
+    // Reset active pointer type after a delay to allow for quick successive strokes
+    setTimeout(() => {
+      activePointerTypeRef.current = null;
+    }, 100);
+    
     saveToHistory();
   };
 
   // ── Objects ───────────────────────────────────────────────────────────────
-  const addTextObject = (x: number, y: number) => {
-    const id = `t_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    setObjects((prev) => [
-      ...prev,
-      {
-        id,
-        type: "text",
-        content: "Text",
-        x,
-        y,
-        size: 36,
-        color: textColor,
-      },
-    ]);
-    setSelectedId(id);
-    setEditingTextId(id);
-    setTool("text");
-  };
-
   const addStickerObject = (emoji: string) => {
     const id = `s_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     setObjects((prev) => [
@@ -491,7 +414,6 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
   const deleteObject = (id: string) => {
     setObjects((prev) => prev.filter((o) => o.id !== id));
     if (selectedId === id) setSelectedId(null);
-    if (editingTextId === id) setEditingTextId(null);
   };
 
   const handleClearCanvas = () => {
@@ -503,30 +425,6 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     saveToHistory();
     setObjects([]);
     setSelectedId(null);
-    setEditingTextId(null);
-  };
-
-  // Handle color changes from modal
-  const handleColorChange = (color: string) => {
-    if (tool === "text") {
-      setTextColor(color);
-      // Update selected text color if applicable
-      if (selectedId) {
-        const obj = objects.find((o) => o.id === selectedId);
-        if (obj && obj.type === "text") {
-          updateObject(selectedId, { color });
-        }
-      }
-    } else if (tool === "brush") {
-      setPenColor(color);
-    }
-  };
-
-  // Get current color based on tool
-  const getCurrentColor = () => {
-    if (tool === "text") return textColor;
-    if (tool === "brush") return penColor;
-    return "#2D2A32";
   };
 
   // ── Save ───────────────────────────────────────────────────────────────────
@@ -577,15 +475,8 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
       tempCtx.save();
       tempCtx.textAlign = "center";
       tempCtx.textBaseline = "middle";
-      
-      if (obj.type === "text") {
-        tempCtx.font = `${obj.size}px Caveat, cursive`;
-        tempCtx.fillStyle = obj.color || "#2D2A32";
-      } else {
-        tempCtx.font = `${obj.size}px serif`;
-        tempCtx.fillStyle = "#000";
-      }
-      
+      tempCtx.font = `${obj.size}px serif`;
+      tempCtx.fillStyle = "#000";
       tempCtx.fillText(
         obj.content,
         obj.x * canvas.width,
@@ -601,7 +492,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
   };
 
   // ── Overlay interactivity ───────────
-  const overlayInteractive = tool === "sticker" || tool === "text";
+  const overlayInteractive = tool === "sticker";
 
   return (
     <>
@@ -685,7 +576,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
                 style={{
                   display: "block",
                   touchAction: "none",
-                  cursor: tool === "eraser" ? "cell" : tool === "text" ? "text" : "crosshair",
+                  cursor: tool === "eraser" ? "cell" : "crosshair",
                 }}
                 onPointerDown={handleCanvasPointerDown}
                 onPointerMove={handleCanvasPointerMove}
@@ -700,27 +591,18 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
                 onClick={(e) => {
                   if (e.target === e.currentTarget) {
                     setSelectedId(null);
-                    setEditingTextId(null);
                   }
                 }}
               >
                 {objects.map((obj) => (
-                  <ObjectItem
+                  <StickerObjectItem
                     key={obj.id}
                     obj={obj}
                     containerRef={containerRef}
                     isSelected={selectedId === obj.id}
-                    isEditing={editingTextId === obj.id}
-                    onSelect={() => {
-                      setSelectedId(obj.id);
-                      if (obj.type === "text") {
-                        setTextColor(obj.color || "#2D2A32");
-                      }
-                    }}
+                    onSelect={() => setSelectedId(obj.id)}
                     onUpdate={(u) => updateObject(obj.id, u)}
                     onDelete={() => deleteObject(obj.id)}
-                    onStartEdit={() => setEditingTextId(obj.id)}
-                    onEndEdit={() => setEditingTextId(null)}
                   />
                 ))}
               </div>
@@ -768,22 +650,6 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
                 >
                   <Eraser size={14} />
                 </button>
-                
-                <button
-                  onClick={() => {
-                    setTool("text");
-                    setShowStickerPicker(false);
-                  }}
-                  className="p-2.5"
-                  style={{
-                    background: tool === "text" ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
-                    color: "#8A7060",
-                    transition: "background 0.15s",
-                  }}
-                  title="Text"
-                >
-                  <Type size={14} />
-                </button>
 
                 <button
                   onClick={() => {
@@ -822,32 +688,6 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
                     className="w-4 h-4 rounded-full"
                     style={{
                       background: penColor,
-                      border: "1.5px solid rgba(0,0,0,0.1)",
-                    }}
-                  />
-                  Color
-                </motion.button>
-              )}
-
-              {/* Color button for text */}
-              {tool === "text" && (
-                <motion.button
-                  onClick={() => setShowColorModal(true)}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg shrink-0"
-                  style={{
-                    background: "#F0E8DC",
-                    fontFamily: "Nunito, sans-serif",
-                    fontSize: "0.7rem",
-                    color: "#8A7060",
-                    fontWeight: 600,
-                  }}
-                  title="Text color"
-                >
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{
-                      background: textColor,
                       border: "1.5px solid rgba(0,0,0,0.1)",
                     }}
                   />
@@ -1041,13 +881,13 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
         </motion.div>
       </motion.div>
 
-      {/* Color Picker Modal - shared between brush and text */}
+      {/* Color Picker Modal for brush */}
       <AnimatePresence>
         {showColorModal && (
           <ColorPickerModal
             isOpen={showColorModal}
-            color={getCurrentColor()}
-            onColorChange={handleColorChange}
+            color={penColor}
+            onColorChange={setPenColor}
             onClose={() => setShowColorModal(false)}
           />
         )}

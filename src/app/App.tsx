@@ -23,6 +23,7 @@ export interface BingoSquare {
   sticker: string | null; // legacy
   completed: boolean;
   stampedDate?: string; // Date when stamp was applied (mm/dd/yyyy format)
+  savedAt?: number; // Timestamp when square was saved (for preserving order across grid size changes)
 }
 
 const YEAR = new Date().getFullYear();
@@ -99,16 +100,109 @@ export default function App() {
     } catch {}
   }, [gridSize]);
 
+  // Prevent context menu and copy/paste globally
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+    };
+
+    const handleCut = (e: ClipboardEvent) => {
+      e.preventDefault();
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+    };
+
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("cut", handleCut);
+    document.addEventListener("paste", handlePaste);
+
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("cut", handleCut);
+      document.removeEventListener("paste", handlePaste);
+    };
+  }, []);
+
   const updateSquare = (id: number, updates: Partial<BingoSquare>) => {
     setLiveSquares((prev) =>
-      prev.map((sq) => (sq.id === id ? { ...sq, ...updates } : sq))
+      prev.map((sq) => {
+        if (sq.id !== id) return sq;
+        
+        const updated = { ...sq, ...updates };
+        
+        // Set savedAt timestamp if content is being added
+        const hasNewContent = 
+          updates.canvasData || 
+          updates.text || 
+          updates.sticker || 
+          (updates.canvasObjects && updates.canvasObjects.length > 0);
+        
+        const isFirstSave = !sq.savedAt;
+        
+        if (hasNewContent && isFirstSave) {
+          updated.savedAt = Date.now();
+        }
+        
+        return updated;
+      })
     );
   };
 
   const handleGridSizeChange = (newSize: number) => {
     setGridSize(newSize);
-    // Reset all squares when grid size changes
-    setLiveSquares(createInitialSquares(newSize));
+    
+    // Filter to saved squares (those with content)
+    const savedSquares = liveSquares.filter((sq) => 
+      sq.text || sq.canvasData || sq.sticker || sq.canvasObjects?.length > 0
+    );
+    
+    // Sort by savedAt timestamp (earliest first)
+    savedSquares.sort((a, b) => {
+      const aTime = a.savedAt ?? 0;
+      const bTime = b.savedAt ?? 0;
+      return aTime - bTime;
+    });
+    
+    // Take only the first N squares that fit in the new grid
+    const maxSquares = newSize * newSize;
+    const squaresToKeep = savedSquares.slice(0, maxSquares);
+    
+    // Create new grid with empty squares
+    const newSquares = createInitialSquares(newSize);
+    
+    // Map saved squares to new grid positions (0, 1, 2, ...)
+    squaresToKeep.forEach((savedSq, index) => {
+      newSquares[index] = {
+        ...savedSq,
+        id: index, // Update ID to match new position
+      };
+    });
+    
+    setLiveSquares(newSquares);
+  };
+
+  const reorderSquares = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    
+    setLiveSquares((prev) => {
+      const newSquares = [...prev];
+      const [movedSquare] = newSquares.splice(fromIndex, 1);
+      newSquares.splice(toIndex, 0, movedSquare);
+      
+      // Update IDs to match new positions
+      return newSquares.map((sq, index) => ({
+        ...sq,
+        id: index,
+      }));
+    });
   };
 
   return (
@@ -124,6 +218,7 @@ export default function App() {
             gridSize={gridSize}
             updateSquare={updateSquare}
             onGridSizeChange={handleGridSizeChange}
+            onReorder={reorderSquares}
             onDone={() => setScreen("stamp")}
           />
         )}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { SquareEditor } from "./SquareEditor";
 import type { BingoSquare } from "../App";
@@ -10,17 +10,34 @@ interface BoardScreenProps {
   gridSize: number;
   updateSquare: (id: number, updates: Partial<BingoSquare>) => void;
   onGridSizeChange: (newSize: number) => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
   onDone: () => void;
+}
+
+interface DragState {
+  isDragging: boolean;
+  draggedIndex: number | null;
+  currentIndex: number | null;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
 }
 
 function MiniSquare({
   square,
   onClick,
+  onLongPressStart,
   index,
+  isDragging,
+  isPlaceholder,
 }: {
   square: BingoSquare;
   onClick: () => void;
+  onLongPressStart: (e: React.PointerEvent) => void;
   index: number;
+  isDragging: boolean;
+  isPlaceholder: boolean;
 }) {
   // Use composite (drawing + objects baked) for display; fall back to drawing-only
   const displayImg = square.compositeData || square.canvasData;
@@ -29,15 +46,128 @@ function MiniSquare({
 
   return (
     <motion.button
+      layout
       onClick={onClick}
-      whileHover={{ scale: 1.06 }}
-      whileTap={{ scale: 0.92 }}
+      onPointerDown={onLongPressStart}
+      whileHover={!isDragging ? { scale: 1.06 } : {}}
       className="relative aspect-square rounded-xl overflow-hidden flex flex-col items-center justify-center cursor-pointer"
       style={{
         background: isEmpty ? "#FFFBF5" : "white",
         border: `1.5px solid ${isEmpty ? "#EFE3D6" : "#E0D0C0"}`,
         boxShadow: isEmpty ? "none" : "0 2px 8px rgba(45,42,50,0.07)",
+        opacity: isPlaceholder ? 0.3 : 1,
+        touchAction: "none",
+        userSelect: "none",
       }}
+      transition={{ layout: { duration: 0.2, ease: "easeOut" } }}
+    >
+      {/* Composite / drawing image */}
+      {displayImg && (
+        <img
+          src={displayImg}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ opacity: 0.9, pointerEvents: "none" }}
+          draggable={false}
+        />
+      )}
+
+      {/* Legacy sticker/text fallback (no canvas image) */}
+      {!displayImg && hasLegacyContent && (
+        <div className="relative z-10 flex flex-col items-center justify-center w-full h-full p-1 pointer-events-none">
+          {square.sticker && (
+            <div style={{ fontSize: "clamp(0.9rem, 2.5vw, 1.4rem)", lineHeight: 1 }}>
+              {square.sticker}
+            </div>
+          )}
+          {square.text && (
+            <div
+              className="text-center w-full px-0.5 truncate"
+              style={{
+                fontFamily: "Caveat, cursive",
+                fontSize: "clamp(0.55rem, 1.8vw, 0.75rem)",
+                color: "#2D2A32",
+              }}
+            >
+              {square.text}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Empty hint */}
+      {isEmpty && (
+        <div style={{ fontSize: "clamp(0.75rem, 2.5vw, 1.1rem)", color: "#DCCFBF", pointerEvents: "none" }}>
+          +
+        </div>
+      )}
+
+      {/* Square number badge */}
+      <div
+        className="absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+        style={{
+          background: "rgba(232,213,196,0.55)",
+          fontSize: "0.38rem",
+          color: "#A89888",
+          fontFamily: "Nunito, sans-serif",
+          fontWeight: 700,
+          pointerEvents: "none",
+        }}
+      >
+        {index + 1}
+      </div>
+    </motion.button>
+  );
+}
+
+function DraggingSquare({
+  square,
+  index,
+  x,
+  y,
+  gridContainerRef,
+}: {
+  square: BingoSquare;
+  index: number;
+  x: number;
+  y: number;
+  gridContainerRef: React.RefObject<HTMLDivElement>;
+}) {
+  const displayImg = square.compositeData || square.canvasData;
+  const hasLegacyContent = square.text || square.sticker;
+  const isEmpty = !displayImg && !hasLegacyContent && !square.canvasObjects?.length;
+
+  // Calculate size based on grid container
+  const [size, setSize] = useState(100);
+
+  useEffect(() => {
+    if (gridContainerRef.current) {
+      const gridRect = gridContainerRef.current.getBoundingClientRect();
+      const gridWidth = gridRect.width;
+      // Approximate square size (accounting for gaps)
+      const cols = Math.sqrt(gridContainerRef.current.children.length);
+      const squareSize = gridWidth / cols - 6; // subtract gap
+      setSize(squareSize);
+    }
+  }, [gridContainerRef]);
+
+  return (
+    <motion.div
+      className="fixed pointer-events-none z-50 rounded-xl overflow-hidden flex flex-col items-center justify-center"
+      style={{
+        left: x,
+        top: y,
+        width: size,
+        height: size,
+        background: isEmpty ? "#FFFBF5" : "white",
+        border: `1.5px solid ${isEmpty ? "#EFE3D6" : "#E0D0C0"}`,
+        boxShadow: "0 12px 24px rgba(45,42,50,0.25)",
+        transform: "translate(-50%, -50%) scale(1.08)",
+        userSelect: "none",
+      }}
+      initial={{ scale: 1, rotate: 0 }}
+      animate={{ scale: 1.08, rotate: 2 }}
+      transition={{ duration: 0.15 }}
     >
       {/* Composite / drawing image */}
       {displayImg && (
@@ -46,10 +176,11 @@ function MiniSquare({
           alt=""
           className="absolute inset-0 w-full h-full object-cover"
           style={{ opacity: 0.9 }}
+          draggable={false}
         />
       )}
 
-      {/* Legacy sticker/text fallback (no canvas image) */}
+      {/* Legacy sticker/text fallback */}
       {!displayImg && hasLegacyContent && (
         <div className="relative z-10 flex flex-col items-center justify-center w-full h-full p-1">
           {square.sticker && (
@@ -92,14 +223,28 @@ function MiniSquare({
       >
         {index + 1}
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
-export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange, onDone }: BoardScreenProps) {
+export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange, onReorder, onDone }: BoardScreenProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showGridSizeDropdown, setShowGridSizeDropdown] = useState(false);
   const editingSquare = editingId !== null ? squares.find((s) => s.id === editingId) : null;
+
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasMovedRef = useRef(false);
+
+  const [dragState, setDragState] = useState<DragState>({
+    isDragging: false,
+    draggedIndex: null,
+    currentIndex: null,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+  });
 
   const filledCount = squares.filter(
     (s) =>
@@ -110,150 +255,123 @@ export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange,
       s.canvasObjects?.length
   ).length;
 
-  const handleExport = async () => {
-    if (filledCount === 0) return;
+  // Calculate current drop index based on pointer position
+  const getDropIndex = (clientX: number, clientY: number): number | null => {
+    if (!gridContainerRef.current) return null;
 
-    // Create a canvas with proper dimensions for the board
-    const canvas = document.createElement("canvas");
-    const squareSize = 400; // Each square is 400x400px
-    const gap = 20; // Gap between squares
-    const padding = 60; // Padding around the board
-    const headerHeight = 160; // Space for title
-    const labelHeight = 80; // Space for BINGO letters
-    
-    const gridSizePx = squareSize * gridSize + gap * (gridSize - 1);
-    canvas.width = gridSizePx + padding * 2;
-    canvas.height = gridSizePx + padding * 2 + headerHeight + labelHeight;
+    const gridRect = gridContainerRef.current.getBoundingClientRect();
+    const children = Array.from(gridContainerRef.current.children);
 
-    const ctx = canvas.getContext("2d")!;
-
-    // Background gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, "#FFF8F0");
-    gradient.addColorStop(1, "#FFF0E8");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Wait for fonts
-    try {
-      await document.fonts.ready;
-    } catch {}
-
-    // Draw title
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#2D2A32";
-    ctx.font = "700 72px Caveat, cursive";
-    ctx.fillText(`${YEAR} Bingo`, canvas.width / 2, padding + 60);
-    ctx.font = "600 28px Nunito, sans-serif";
-    ctx.fillStyle = "#A89888";
-    ctx.fillText("My Year in Review", canvas.width / 2, padding + 110);
-    ctx.restore();
-
-    // Draw squares
-    const startY = padding + headerHeight + labelHeight;
-    
-    for (let row = 0; row < gridSize; row++) {
-      for (let col = 0; col < gridSize; col++) {
-        const sqIndex = row * gridSize + col;
-        const square = squares[sqIndex];
-        const x = padding + col * (squareSize + gap);
-        const y = startY + row * (squareSize + gap);
-
-        // Square background
-        ctx.save();
-        ctx.fillStyle = "#FFFBF5";
-        ctx.strokeStyle = "#E0D0C0";
-        ctx.lineWidth = 3;
-        
-        // Rounded rectangle
-        const radius = 24;
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + squareSize - radius, y);
-        ctx.arcTo(x + squareSize, y, x + squareSize, y + radius, radius);
-        ctx.lineTo(x + squareSize, y + squareSize - radius);
-        ctx.arcTo(x + squareSize, y + squareSize, x + squareSize - radius, y + squareSize, radius);
-        ctx.lineTo(x + radius, y + squareSize);
-        ctx.arcTo(x, y + squareSize, x, y + squareSize - radius, radius);
-        ctx.lineTo(x, y + radius);
-        ctx.arcTo(x, y, x + radius, y, radius);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // Draw square content if it exists
-        const displayImg = square.compositeData || square.canvasData;
-        if (displayImg) {
-          const img = new Image();
-          img.src = displayImg;
-          await new Promise<void>((resolve) => {
-            img.onload = () => {
-              ctx.save();
-              // Clip to rounded rectangle
-              ctx.beginPath();
-              ctx.moveTo(x + radius, y);
-              ctx.lineTo(x + squareSize - radius, y);
-              ctx.arcTo(x + squareSize, y, x + squareSize, y + radius, radius);
-              ctx.lineTo(x + squareSize, y + squareSize - radius);
-              ctx.arcTo(x + squareSize, y + squareSize, x + squareSize - radius, y + squareSize, radius);
-              ctx.lineTo(x + radius, y + squareSize);
-              ctx.arcTo(x, y + squareSize, x, y + squareSize - radius, radius);
-              ctx.lineTo(x, y + radius);
-              ctx.arcTo(x, y, x + radius, y, radius);
-              ctx.closePath();
-              ctx.clip();
-              
-              ctx.drawImage(img, x, y, squareSize, squareSize);
-              ctx.restore();
-              resolve();
-            };
-            img.onerror = () => resolve();
-          });
-        } else if (square.text || square.sticker) {
-          // Legacy content
-          ctx.save();
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          if (square.sticker) {
-            ctx.font = "72px serif";
-            ctx.fillText(square.sticker, x + squareSize / 2, y + squareSize / 2 - 20);
-          }
-          if (square.text) {
-            ctx.font = "32px Caveat, cursive";
-            ctx.fillStyle = "#2D2A32";
-            ctx.fillText(square.text, x + squareSize / 2, y + squareSize / 2 + (square.sticker ? 50 : 0));
-          }
-          ctx.restore();
-        }
-
-        // Square number badge
-        ctx.save();
-        ctx.fillStyle = "rgba(232,213,196,0.7)";
-        ctx.beginPath();
-        ctx.arc(x + 25, y + 25, 18, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#A89888";
-        ctx.font = "600 16px Nunito, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(String(sqIndex + 1), x + 25, y + 25);
-        ctx.restore();
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      const rect = child.getBoundingClientRect();
+      
+      if (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      ) {
+        return i;
       }
     }
 
-    // Download
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${YEAR}-bingo-board.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }, "image/png");
+    return null;
   };
+
+  const handleLongPressStart = (index: number, e: React.PointerEvent) => {
+    e.preventDefault();
+    hasMovedRef.current = false;
+
+    // Start long-press timer
+    longPressTimerRef.current = setTimeout(() => {
+      // Enter drag mode
+      setDragState({
+        isDragging: true,
+        draggedIndex: index,
+        currentIndex: index,
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      });
+
+      // Add vibration feedback if available
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    }, 400); // 400ms long press
+  };
+
+  const handlePointerMove = (e: PointerEvent) => {
+    if (!dragState.isDragging || dragState.draggedIndex === null) return;
+
+    hasMovedRef.current = true;
+
+    const dropIndex = getDropIndex(e.clientX, e.clientY);
+
+    setDragState((prev) => ({
+      ...prev,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      currentIndex: dropIndex !== null ? dropIndex : prev.currentIndex,
+    }));
+  };
+
+  const handlePointerUp = () => {
+    // Clear long-press timer
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (dragState.isDragging && dragState.draggedIndex !== null && dragState.currentIndex !== null) {
+      // Perform the reorder
+      if (dragState.draggedIndex !== dragState.currentIndex) {
+        onReorder(dragState.draggedIndex, dragState.currentIndex);
+      }
+    }
+
+    // Reset drag state
+    setDragState({
+      isDragging: false,
+      draggedIndex: null,
+      currentIndex: null,
+      startX: 0,
+      startY: 0,
+      currentX: 0,
+      currentY: 0,
+    });
+  };
+
+  const handleSquareClick = (index: number) => {
+    // Only open editor if not dragging and hasn't moved
+    if (!dragState.isDragging && !hasMovedRef.current) {
+      setEditingId(squares[index].id);
+    }
+  };
+
+  // Add global pointer event listeners when dragging
+  useEffect(() => {
+    if (dragState.isDragging) {
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+
+      return () => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+      };
+    }
+  }, [dragState.isDragging, dragState.draggedIndex, dragState.currentIndex]);
+
+  // Create display array with reordering
+  const displaySquares = [...squares];
+  if (dragState.isDragging && dragState.draggedIndex !== null && dragState.currentIndex !== null) {
+    const [movedSquare] = displaySquares.splice(dragState.draggedIndex, 1);
+    displaySquares.splice(dragState.currentIndex, 0, movedSquare);
+  }
 
   const handleProceed = () => {
     if (filledCount > 0) {
@@ -293,7 +411,7 @@ export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange,
           className="mt-2"
           style={{ fontFamily: "Nunito, sans-serif", fontSize: "0.85rem", color: "#A89888" }}
         >
-          {filledCount}/{gridSize * gridSize} filled · tap any square to edit
+          {filledCount}/{gridSize * gridSize} filled · tap to edit · hold to rearrange
         </motion.p>
 
         {/* Grid Size Selector */}
@@ -369,6 +487,7 @@ export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange,
       {/* Grid */}
       <div className="w-full max-w-lg px-4">
         <motion.div
+          ref={gridContainerRef}
           className="grid gap-1.5"
           style={{
             gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
@@ -377,16 +496,35 @@ export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange,
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.5 }}
         >
-          {squares.map((sq, i) => (
-            <MiniSquare
-              key={sq.id}
-              square={sq}
-              index={i}
-              onClick={() => setEditingId(sq.id)}
-            />
-          ))}
+          {displaySquares.map((sq, displayIndex) => {
+            const originalIndex = squares.findIndex(s => s.id === sq.id);
+            const isBeingDragged = dragState.isDragging && dragState.draggedIndex === originalIndex;
+            
+            return (
+              <MiniSquare
+                key={sq.id}
+                square={sq}
+                index={originalIndex}
+                onClick={() => handleSquareClick(originalIndex)}
+                onLongPressStart={(e) => handleLongPressStart(originalIndex, e)}
+                isDragging={isBeingDragged}
+                isPlaceholder={isBeingDragged}
+              />
+            );
+          })}
         </motion.div>
       </div>
+
+      {/* Dragging square overlay */}
+      {dragState.isDragging && dragState.draggedIndex !== null && (
+        <DraggingSquare
+          square={squares[dragState.draggedIndex]}
+          index={dragState.draggedIndex}
+          x={dragState.currentX}
+          y={dragState.currentY}
+          gridContainerRef={gridContainerRef}
+        />
+      )}
 
       {/* Done button */}
       <div className="w-full max-w-lg px-4 pb-10 mt-8">

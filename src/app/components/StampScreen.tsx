@@ -73,6 +73,7 @@ function StampOverlay({ justStamped, stampedDate }: { justStamped: boolean; stam
           aspectRatio: "1",
           border: "3px solid rgba(217, 143, 164, 0.88)",
           background: "rgba(255,255,255,0.1)",
+          containerType: "size",
         }}
       >
         <div
@@ -82,15 +83,24 @@ function StampOverlay({ justStamped, stampedDate }: { justStamped: boolean; stam
             fontWeight: 700,
             textAlign: "center",
             lineHeight: 1,
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          <div style={{ fontSize: "clamp(0.7rem, 2.4vw, 1.1rem)", letterSpacing: "0.06em" }}>
+          {/* DID text - 19% of stamp diameter */}
+          <div style={{ fontSize: "19cqw", letterSpacing: "0.06em", marginTop: "-0.15em" }}>
             DID
           </div>
-          <div style={{ fontSize: "clamp(0.7rem, 2.4vw, 1.1rem)", letterSpacing: "0.1em" }}>
+          {/* IT text - 19% of stamp diameter */}
+          <div style={{ fontSize: "19cqw", letterSpacing: "0.1em", marginTop: "0.05em" }}>
             IT
           </div>
-          <div style={{ fontSize: "clamp(0.3rem, 1vw, 0.48rem)", opacity: 0.7 }}>
+          {/* Date text - 9% of stamp diameter */}
+          <div style={{ fontSize: "9cqw", opacity: 0.7, marginTop: "0.15em" }}>
             {stampedDate || YEAR}
           </div>
         </div>
@@ -223,16 +233,17 @@ export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampSc
   const completedCount = squares.filter((s) => s.completed).length;
   const hasStamps = completedCount > 0;
 
-  // Fire confetti exactly once when all 25 squares are stamped
+  // Fire confetti exactly once when ALL squares for current grid size are stamped
+  const totalSquares = gridSize * gridSize;
   useEffect(() => {
-    if (completedCount === 25 && !confettiFiredRef.current) {
+    if (completedCount === totalSquares && !confettiFiredRef.current) {
       confettiFiredRef.current = true;
       fireConfetti();
     }
-    if (completedCount < 25) {
+    if (completedCount < totalSquares) {
       confettiFiredRef.current = false;
     }
-  }, [completedCount]);
+  }, [completedCount, totalSquares]);
 
   // Count bingo lines
   const bingoLineCount = (() => {
@@ -258,8 +269,8 @@ export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampSc
 
   // Show BINGO message when a new line is completed
   useEffect(() => {
-    // If board is fully complete (25/25), show permanent message
-    if (completedCount === 25) {
+    // If board is fully complete, show permanent message
+    if (completedCount === totalSquares) {
       setBingoMessage(`Congratulations, you turned all your ${YEAR} goals into reality!`);
       setShowBingoMessage(true);
       return;
@@ -280,7 +291,7 @@ export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampSc
     if (bingoLineCount === 0) {
       setShowBingoMessage(false);
     }
-  }, [bingoLineCount, completedCount]);
+  }, [bingoLineCount, completedCount, totalSquares]);
 
   const handleStamp = (id: number) => {
     setJustStampedId(id);
@@ -307,9 +318,9 @@ export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampSc
     const padding = 60;
     const headerHeight = 140;
     
-    const gridSize = squareSize * 5 + gap * 4;
-    canvas.width = gridSize + padding * 2;
-    canvas.height = gridSize + padding * 2 + headerHeight;
+    const gridSizePx = squareSize * gridSize + gap * (gridSize - 1);
+    canvas.width = gridSizePx + padding * 2;
+    canvas.height = gridSizePx + padding * 2 + headerHeight;
 
     const ctx = canvas.getContext("2d")!;
 
@@ -335,9 +346,9 @@ export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampSc
     // Draw squares
     const startY = padding + headerHeight;
     
-    for (let row = 0; row < 5; row++) {
-      for (let col = 0; col < 5; col++) {
-        const sqIndex = row * 5 + col;
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const sqIndex = row * gridSize + col;
         const square = squares[sqIndex];
         const x = padding + col * (squareSize + gap);
         const y = startY + row * (squareSize + gap);
@@ -522,7 +533,6 @@ export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampSc
                 color: "#B0A090",
                 fontSize: "0.75rem",
               }}
-              className="inline md:hidden"
             >
               · click to stamp
             </span>
