@@ -27,9 +27,10 @@ export interface BingoSquare {
 
 const YEAR = new Date().getFullYear();
 const STORAGE_KEY = `bingo-board-${YEAR}`;
+const GRID_SIZE_KEY = `bingo-grid-size-${YEAR}`;
 
-function createInitialSquares(): BingoSquare[] {
-  return Array.from({ length: 25 }, (_, i) => ({
+function createInitialSquares(gridSize: number): BingoSquare[] {
+  return Array.from({ length: gridSize * gridSize }, (_, i) => ({
     id: i,
     text: "",
     canvasData: null,
@@ -47,7 +48,7 @@ function loadSquares(): BingoSquare[] {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length === 25) {
+      if (Array.isArray(parsed)) {
         // Back-fill new fields for legacy saved data
         return parsed.map((s: BingoSquare) => ({
           canvasObjects: [],
@@ -57,7 +58,20 @@ function loadSquares(): BingoSquare[] {
       }
     }
   } catch {}
-  return createInitialSquares();
+  return createInitialSquares(5);
+}
+
+function loadGridSize(): number {
+  try {
+    const saved = localStorage.getItem(GRID_SIZE_KEY);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if ([3, 4, 5, 6].includes(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return 5; // default
 }
 
 function hasContent(squares: BingoSquare[]): boolean {
@@ -67,6 +81,7 @@ function hasContent(squares: BingoSquare[]): boolean {
 }
 
 export default function App() {
+  const [gridSize, setGridSize] = useState<number>(loadGridSize);
   const [liveSquares, setLiveSquares] = useState<BingoSquare[]>(loadSquares);
 
   // Always start at intro screen
@@ -78,10 +93,22 @@ export default function App() {
     } catch {}
   }, [liveSquares]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(GRID_SIZE_KEY, String(gridSize));
+    } catch {}
+  }, [gridSize]);
+
   const updateSquare = (id: number, updates: Partial<BingoSquare>) => {
     setLiveSquares((prev) =>
       prev.map((sq) => (sq.id === id ? { ...sq, ...updates } : sq))
     );
+  };
+
+  const handleGridSizeChange = (newSize: number) => {
+    setGridSize(newSize);
+    // Reset all squares when grid size changes
+    setLiveSquares(createInitialSquares(newSize));
   };
 
   return (
@@ -94,7 +121,9 @@ export default function App() {
           <BoardScreen
             key="board"
             squares={liveSquares}
+            gridSize={gridSize}
             updateSquare={updateSquare}
+            onGridSizeChange={handleGridSizeChange}
             onDone={() => setScreen("stamp")}
           />
         )}
@@ -102,6 +131,7 @@ export default function App() {
           <StampScreen
             key="stamp"
             squares={liveSquares}
+            gridSize={gridSize}
             updateSquare={updateSquare}
             onBack={() => setScreen("board")}
           />

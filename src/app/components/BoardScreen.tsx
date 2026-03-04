@@ -7,7 +7,9 @@ const YEAR = new Date().getFullYear();
 
 interface BoardScreenProps {
   squares: BingoSquare[];
+  gridSize: number;
   updateSquare: (id: number, updates: Partial<BingoSquare>) => void;
+  onGridSizeChange: (newSize: number) => void;
   onDone: () => void;
 }
 
@@ -94,8 +96,9 @@ function MiniSquare({
   );
 }
 
-export function BoardScreen({ squares, updateSquare, onDone }: BoardScreenProps) {
+export function BoardScreen({ squares, gridSize, updateSquare, onGridSizeChange, onDone }: BoardScreenProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [showGridSizeDropdown, setShowGridSizeDropdown] = useState(false);
   const editingSquare = editingId !== null ? squares.find((s) => s.id === editingId) : null;
 
   const filledCount = squares.filter(
@@ -118,9 +121,9 @@ export function BoardScreen({ squares, updateSquare, onDone }: BoardScreenProps)
     const headerHeight = 160; // Space for title
     const labelHeight = 80; // Space for BINGO letters
     
-    const gridSize = squareSize * 5 + gap * 4;
-    canvas.width = gridSize + padding * 2;
-    canvas.height = gridSize + padding * 2 + headerHeight + labelHeight;
+    const gridSizePx = squareSize * gridSize + gap * (gridSize - 1);
+    canvas.width = gridSizePx + padding * 2;
+    canvas.height = gridSizePx + padding * 2 + headerHeight + labelHeight;
 
     const ctx = canvas.getContext("2d")!;
 
@@ -150,9 +153,9 @@ export function BoardScreen({ squares, updateSquare, onDone }: BoardScreenProps)
     // Draw squares
     const startY = padding + headerHeight + labelHeight;
     
-    for (let row = 0; row < 5; row++) {
-      for (let col = 0; col < 5; col++) {
-        const sqIndex = row * 5 + col;
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const sqIndex = row * gridSize + col;
         const square = squares[sqIndex];
         const x = padding + col * (squareSize + gap);
         const y = startY + row * (squareSize + gap);
@@ -290,14 +293,86 @@ export function BoardScreen({ squares, updateSquare, onDone }: BoardScreenProps)
           className="mt-2"
           style={{ fontFamily: "Nunito, sans-serif", fontSize: "0.85rem", color: "#A89888" }}
         >
-          {filledCount}/25 filled · tap any square to edit
+          {filledCount}/{gridSize * gridSize} filled · tap any square to edit
         </motion.p>
+
+        {/* Grid Size Selector */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className="mt-4 relative"
+        >
+          <button
+            onClick={() => setShowGridSizeDropdown(!showGridSizeDropdown)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl"
+            style={{
+              background: "#FFFBF5",
+              border: "1.5px solid #E0D0C0",
+              fontFamily: "Nunito, sans-serif",
+              fontSize: "0.85rem",
+              color: "#664E44",
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ color: "#A89888", fontSize: "0.75rem" }}>Grid Size:</span>
+            {gridSize} × {gridSize}
+            <span style={{ marginLeft: "2px", fontSize: "0.7rem" }}>▼</span>
+          </button>
+
+          {/* Dropdown */}
+          <AnimatePresence>
+            {showGridSizeDropdown && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="absolute top-full mt-2 left-0 right-0 rounded-xl overflow-hidden"
+                style={{
+                  background: "#FFFBF5",
+                  border: "1.5px solid #E0D0C0",
+                  boxShadow: "0 4px 12px rgba(45,42,50,0.12)",
+                  zIndex: 10,
+                }}
+              >
+                {[3, 4, 5, 6].map((size) => (
+                  <motion.button
+                    key={size}
+                    onClick={() => {
+                      onGridSizeChange(size);
+                      setShowGridSizeDropdown(false);
+                    }}
+                    whileHover={{ background: "#F7F0E8" }}
+                    className="w-full px-4 py-2.5 text-left flex items-center justify-between"
+                    style={{
+                      fontFamily: "Nunito, sans-serif",
+                      fontSize: "0.85rem",
+                      color: gridSize === size ? "#664E44" : "#8A7060",
+                      fontWeight: gridSize === size ? 700 : 500,
+                      background: gridSize === size ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                      borderBottom: size !== 6 ? "1px solid #F0E8DC" : "none",
+                    }}
+                  >
+                    <span>{size} × {size}</span>
+                    {gridSize === size && (
+                      <span style={{ fontSize: "0.9rem" }}>✓</span>
+                    )}
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </div>
 
       {/* Grid */}
       <div className="w-full max-w-lg px-4">
         <motion.div
-          className="grid grid-cols-5 gap-1.5"
+          className="grid gap-1.5"
+          style={{
+            gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
+          }}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.5 }}

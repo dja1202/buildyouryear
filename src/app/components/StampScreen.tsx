@@ -8,6 +8,7 @@ const YEAR = new Date().getFullYear();
 
 interface StampScreenProps {
   squares: BingoSquare[];
+  gridSize: number;
   updateSquare: (id: number, updates: Partial<BingoSquare>) => void;
   onBack: () => void;
 }
@@ -206,7 +207,7 @@ function StampSquare({
 }
 
 // ─── StampScreen ───────────────────────────────────────────────────────────
-export function StampScreen({ squares, updateSquare, onBack }: StampScreenProps) {
+export function StampScreen({ squares, gridSize, updateSquare, onBack }: StampScreenProps) {
   const [justStampedId, setJustStampedId] = useState<number | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showBingoMessage, setShowBingoMessage] = useState(false);
@@ -239,18 +240,18 @@ export function StampScreen({ squares, updateSquare, onBack }: StampScreenProps)
     let count = 0;
     
     // Check rows
-    for (let r = 0; r < 5; r++) {
-      if ([0, 1, 2, 3, 4].every((c) => g[r * 5 + c])) count++;
+    for (let r = 0; r < gridSize; r++) {
+      if (Array.from({ length: gridSize }, (_, c) => g[r * gridSize + c]).every(Boolean)) count++;
     }
     
     // Check columns
-    for (let c = 0; c < 5; c++) {
-      if ([0, 1, 2, 3, 4].every((r) => g[r * 5 + c])) count++;
+    for (let c = 0; c < gridSize; c++) {
+      if (Array.from({ length: gridSize }, (_, r) => g[r * gridSize + c]).every(Boolean)) count++;
     }
     
     // Check diagonals
-    if ([0, 6, 12, 18, 24].every((i) => g[i])) count++;
-    if ([4, 8, 12, 16, 20].every((i) => g[i])) count++;
+    if (Array.from({ length: gridSize }, (_, i) => g[i * gridSize + i]).every(Boolean)) count++;
+    if (Array.from({ length: gridSize }, (_, i) => g[i * gridSize + (gridSize - 1 - i)]).every(Boolean)) count++;
     
     return count;
   })();
@@ -514,7 +515,17 @@ export function StampScreen({ squares, updateSquare, onBack }: StampScreenProps)
             }}
           >
             {completedCount} / {filledCount} done
-            {completedCount === 25 && " · 🎉 All done!"}
+            {completedCount === gridSize * gridSize && " · 🎉 All done!"}
+            <span
+              style={{
+                marginLeft: "0.5rem",
+                color: "#B0A090",
+                fontSize: "0.75rem",
+              }}
+              className="inline md:hidden"
+            >
+              · click to stamp
+            </span>
           </p>
         </motion.div>
 
@@ -541,7 +552,12 @@ export function StampScreen({ squares, updateSquare, onBack }: StampScreenProps)
 
       {/* Grid */}
       <div className="w-full max-w-lg px-4">
-        <div className="grid grid-cols-5 gap-1.5">
+        <div
+          className="grid gap-1.5"
+          style={{
+            gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
+          }}
+        >
           {squares.map((sq) => (
             <StampSquare
               key={sq.id}

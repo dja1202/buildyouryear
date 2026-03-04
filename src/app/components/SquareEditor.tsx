@@ -9,14 +9,13 @@ import {
   X,
   Trash2,
   Pencil,
-  PenTool,
-  Paintbrush,
   Eraser,
   Smile,
   RotateCcw,
   RotateCw,
+  Type,
 } from "lucide-react";
-import { HexColorPicker } from "react-colorful";
+import { ColorPickerModal } from "./ColorPickerModal";
 import type { BingoSquare, CanvasObject } from "../App";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -27,27 +26,43 @@ const STICKERS = [
   "🎃","🎄","🎆","🌸","🐉","🦁","🐬","🌮","☕","🎠",
 ];
 
-type ToolType = "brush" | "eraser" | "sticker";
+type ToolType = "brush" | "eraser" | "sticker" | "text";
 
-// ─── ObjectItem: draggable / resizable sticker ────────────────────────
+// ─── TextObjectItem ────────────────────────────────────────────────────
 interface ObjectItemProps {
   obj: CanvasObject;
   containerRef: React.RefObject<HTMLDivElement | null>;
   isSelected: boolean;
+  isEditing: boolean;
   onSelect: () => void;
   onUpdate: (u: Partial<CanvasObject>) => void;
   onDelete: () => void;
+  onStartEdit: () => void;
+  onEndEdit: () => void;
 }
 
 function ObjectItem({
   obj,
   containerRef,
   isSelected,
+  isEditing,
   onSelect,
   onUpdate,
   onDelete,
+  onStartEdit,
+  onEndEdit,
 }: ObjectItemProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
   const handleDragPointerDown = (e: React.PointerEvent) => {
+    if (isEditing) return;
     e.preventDefault();
     e.stopPropagation();
     onSelect();
@@ -93,6 +108,31 @@ function ObjectItem({
     window.addEventListener("pointerup", onUp);
   };
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (obj.type === "text") {
+      e.preventDefault();
+      e.stopPropagation();
+      onStartEdit();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onUpdate({ content: e.target.value });
+  };
+
+  const handleInputBlur = () => {
+    onEndEdit();
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      onEndEdit();
+    }
+    if (e.key === "Escape") {
+      onEndEdit();
+    }
+  };
+
   return (
     <div
       style={{
@@ -100,31 +140,58 @@ function ObjectItem({
         left: `${obj.x * 100}%`,
         top: `${obj.y * 100}%`,
         transform: "translate(-50%, -50%)",
-        cursor: "move",
-        userSelect: "none",
+        cursor: isEditing ? "text" : "move",
+        userSelect: isEditing ? "text" : "none",
         touchAction: "none",
         zIndex: isSelected ? 20 : 10,
       }}
-      onPointerDown={handleDragPointerDown}
+      onPointerDown={isEditing ? undefined : handleDragPointerDown}
+      onDoubleClick={handleDoubleClick}
     >
       {/* Content */}
-      <div
-        style={{
-          fontSize: obj.size,
-          fontFamily: "serif",
-          lineHeight: 1,
-          whiteSpace: "nowrap",
-          outline: isSelected ? "1.5px dashed #dba1a2" : "none",
-          outlineOffset: 5,
-          borderRadius: 4,
-          padding: "1px 3px",
-        }}
-      >
-        {obj.content}
-      </div>
+      {isEditing && obj.type === "text" ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={obj.content}
+          onChange={handleInputChange}
+          onBlur={handleInputBlur}
+          onKeyDown={handleInputKeyDown}
+          style={{
+            fontSize: obj.size,
+            fontFamily: "Caveat, cursive",
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            outline: "2px solid #dba1a2",
+            outlineOffset: 2,
+            borderRadius: 4,
+            padding: "2px 6px",
+            background: "rgba(255,255,255,0.9)",
+            border: "none",
+            color: obj.color || "#2D2A32",
+            minWidth: "60px",
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            fontSize: obj.size,
+            fontFamily: obj.type === "text" ? "Caveat, cursive" : "serif",
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            outline: isSelected ? "1.5px dashed #dba1a2" : "none",
+            outlineOffset: 5,
+            borderRadius: 4,
+            padding: "1px 3px",
+            color: obj.type === "text" ? (obj.color || "#2D2A32") : "inherit",
+          }}
+        >
+          {obj.content}
+        </div>
+      )}
 
       {/* Selection handles */}
-      {isSelected && (
+      {isSelected && !isEditing && (
         <>
           {/* Delete button */}
           <button
@@ -198,18 +265,22 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
 
   const [tool, setTool] = useState<ToolType>("brush");
   const [penColor, setPenColor] = useState("#2D2A32");
-  const [brushSize, setBrushSize] = useState(5); // User-controlled brush size
-  const [eraserSize, setEraserSize] = useState(16); // Selected eraser size
-  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [brushSize, setBrushSize] = useState(5);
+  const [eraserSize, setEraserSize] = useState(16);
 
   const [objects, setObjects] = useState<CanvasObject[]>(
     () => square.canvasObjects ?? []
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+
+  // Color picker modal state
+  const [textColor, setTextColor] = useState("#2D2A32");
+  const [showColorModal, setShowColorModal] = useState(false);
 
   // ── Canvas setup ──────────────────────────────────────────────────────────
   const syncUndoRedo = useCallback(() => {
@@ -224,7 +295,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
 
     const setupCanvas = () => {
       const w = container.offsetWidth || Math.floor(container.getBoundingClientRect().width);
-      const h = w; // Make it square (same as board editor grid)
+      const h = w;
       canvas.width = w;
       canvas.height = h;
       canvas.style.width = w + "px";
@@ -306,13 +377,26 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
+  const handleCanvasClick = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (tool === "text") {
+      e.preventDefault();
+      const rect = containerRef.current!.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      addTextObject(x, y);
+    }
+  };
+
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const isDrawTool = tool === "brush" || tool === "eraser";
-    if (!isDrawTool) return;
+    if (!isDrawTool) {
+      handleCanvasClick(e);
+      return;
+    }
     
     e.preventDefault();
     setSelectedId(null);
-    setShowColorPicker(false);
+    setShowColorModal(false);
     isDrawingRef.current = true;
     const pt = getPoint(e);
     lastPtRef.current = pt;
@@ -360,6 +444,25 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
   };
 
   // ── Objects ───────────────────────────────────────────────────────────────
+  const addTextObject = (x: number, y: number) => {
+    const id = `t_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setObjects((prev) => [
+      ...prev,
+      {
+        id,
+        type: "text",
+        content: "Text",
+        x,
+        y,
+        size: 36,
+        color: textColor,
+      },
+    ]);
+    setSelectedId(id);
+    setEditingTextId(id);
+    setTool("text");
+  };
+
   const addStickerObject = (emoji: string) => {
     const id = `s_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     setObjects((prev) => [
@@ -388,6 +491,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
   const deleteObject = (id: string) => {
     setObjects((prev) => prev.filter((o) => o.id !== id));
     if (selectedId === id) setSelectedId(null);
+    if (editingTextId === id) setEditingTextId(null);
   };
 
   const handleClearCanvas = () => {
@@ -399,24 +503,45 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     saveToHistory();
     setObjects([]);
     setSelectedId(null);
+    setEditingTextId(null);
   };
 
-  // ── Save: check if empty and reset if needed ─────────
+  // Handle color changes from modal
+  const handleColorChange = (color: string) => {
+    if (tool === "text") {
+      setTextColor(color);
+      // Update selected text color if applicable
+      if (selectedId) {
+        const obj = objects.find((o) => o.id === selectedId);
+        if (obj && obj.type === "text") {
+          updateObject(selectedId, { color });
+        }
+      }
+    } else if (tool === "brush") {
+      setPenColor(color);
+    }
+  };
+
+  // Get current color based on tool
+  const getCurrentColor = () => {
+    if (tool === "text") return textColor;
+    if (tool === "brush") return penColor;
+    return "#2D2A32";
+  };
+
+  // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     const canvas = canvasRef.current;
     if (!canvas) {
-      // Clear the square if canvas doesn't exist, including any stamp
       onSave({ canvasData: null, canvasObjects: [], compositeData: null, text: "", completed: false, stampedDate: undefined });
       onClose();
       return;
     }
 
-    // Check if canvas is empty (only has blank background)
     const ctx = canvas.getContext("2d")!;
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const pixels = imageData.data;
     
-    // Check if all pixels are the background color (#FFFBF5 = rgb(255, 251, 245))
     const bgR = 255, bgG = 251, bgB = 245;
     let hasDrawing = false;
     for (let i = 0; i < pixels.length; i += 4) {
@@ -426,14 +551,12 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
       }
     }
 
-    // If completely empty, clear the square and remove any stamp
     if (!hasDrawing && objects.length === 0) {
       onSave({ canvasData: null, canvasObjects: [], compositeData: null, text: "", completed: false, stampedDate: undefined });
       onClose();
       return;
     }
 
-    // Otherwise save the content and reset any existing stamp
     const canvasData = canvas.toDataURL("image/png");
 
     // Composite: drawing + objects baked in
@@ -454,8 +577,15 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
       tempCtx.save();
       tempCtx.textAlign = "center";
       tempCtx.textBaseline = "middle";
-      tempCtx.font = `${obj.size}px serif`;
-      tempCtx.fillStyle = "#000";
+      
+      if (obj.type === "text") {
+        tempCtx.font = `${obj.size}px Caveat, cursive`;
+        tempCtx.fillStyle = obj.color || "#2D2A32";
+      } else {
+        tempCtx.font = `${obj.size}px serif`;
+        tempCtx.fillStyle = "#000";
+      }
+      
       tempCtx.fillText(
         obj.content,
         obj.x * canvas.width,
@@ -466,447 +596,462 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
 
     const compositeData = temp.toDataURL("image/jpeg", 0.88);
 
-    // Reset stamp when saving edited content
     onSave({ canvasData, canvasObjects: objects, compositeData, text: "", completed: false, stampedDate: undefined });
     onClose();
   };
 
   // ── Overlay interactivity ───────────
-  const overlayInteractive = tool === "sticker";
+  const overlayInteractive = tool === "sticker" || tool === "text";
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      style={{ background: "rgba(45,42,50,0.6)", backdropFilter: "blur(5px)" }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <>
       <motion.div
-        className="w-full sm:max-w-md flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden"
-        style={{
-          background: "#FFFBF5",
-          maxHeight: "96vh",
-          boxShadow: "0 24px 64px rgba(45,42,50,0.3)",
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        style={{ background: "rgba(45,42,50,0.6)", backdropFilter: "blur(5px)" }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
         }}
-        initial={{ y: 80, scale: 0.97 }}
-        animate={{ y: 0, scale: 1 }}
-        exit={{ y: 80, scale: 0.97 }}
-        transition={{ type: "spring", stiffness: 420, damping: 38 }}
-        onClick={(e) => e.stopPropagation()}
+        onCopy={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+        onPaste={(e) => e.preventDefault()}
       >
-        {/* ── Header ── */}
-        <div
-          className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0"
-          style={{ borderBottom: "1.5px solid #F0E8DC" }}
+        <motion.div
+          className="w-full sm:max-w-md flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden"
+          style={{
+            background: "#FFFBF5",
+            maxHeight: "96vh",
+            boxShadow: "0 24px 64px rgba(45,42,50,0.3)",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            WebkitTouchCallout: "none",
+          }}
+          initial={{ y: 80, scale: 0.97 }}
+          animate={{ y: 0, scale: 1 }}
+          exit={{ y: 80, scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 420, damping: 38 }}
+          onClick={(e) => e.stopPropagation()}
+          onCopy={(e) => e.preventDefault()}
+          onCut={(e) => e.preventDefault()}
+          onPaste={(e) => e.preventDefault()}
         >
-          <span
-            style={{
-              fontFamily: "Nunito, sans-serif",
-              fontSize: "1.2rem",
-              color: "#664E44",
-              fontWeight: 700,
-            }}
-          >
-            Square #{square.id + 1}
-          </span>
-          <div className="flex items-center gap-2">
-            <motion.button
-              onClick={handleClearCanvas}
-              whileTap={{ scale: 0.88 }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs"
-              style={{ background: "#F0E8DC", color: "#8A7060", fontFamily: "Nunito, sans-serif", fontWeight: 600 }}
-            >
-              <Trash2 size={12} /> Clear
-            </motion.button>
-            <motion.button
-              onClick={onClose}
-              whileTap={{ scale: 0.88 }}
-              className="w-8 h-8 rounded-full flex items-center justify-center"
-              style={{ background: "#dba1a2", color: "white" }}
-            >
-              <X size={15} />
-            </motion.button>
-          </div>
-        </div>
-
-        {/* ── Scrollable body ── */}
-        <div className="overflow-y-auto flex-1 min-h-0">
-          {/* Canvas container */}
+          {/* ── Header ── */}
           <div
-            ref={containerRef}
-            className="relative w-full overflow-hidden"
-            style={{ background: "#F7F0E8", lineHeight: 0 }}
-          >
-            <canvas
-              ref={canvasRef}
-              style={{
-                display: "block",
-                touchAction: "none",
-                cursor: tool === "eraser" ? "cell" : "crosshair",
-              }}
-              onPointerDown={handleCanvasPointerDown}
-              onPointerMove={handleCanvasPointerMove}
-              onPointerUp={handleCanvasPointerUp}
-              onPointerLeave={handleCanvasPointerUp}
-            />
-
-            {/* Objects overlay */}
-            <div
-              className="absolute inset-0"
-              style={{ pointerEvents: overlayInteractive ? "auto" : "none" }}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) setSelectedId(null);
-              }}
-            >
-              {objects.map((obj) => (
-                <ObjectItem
-                  key={obj.id}
-                  obj={obj}
-                  containerRef={containerRef}
-                  isSelected={selectedId === obj.id}
-                  onSelect={() => setSelectedId(obj.id)}
-                  onUpdate={(u) => updateObject(obj.id, u)}
-                  onDelete={() => deleteObject(obj.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* ── Toolbar ── */}
-          <div
-            className="px-3 py-2.5 flex items-center gap-2 flex-wrap shrink-0"
+            className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0"
             style={{ borderBottom: "1.5px solid #F0E8DC" }}
           >
-            {/* Brush type group */}
-            <div
-              className="flex rounded-xl overflow-hidden"
-              style={{ border: "1.5px solid #8A7060" }}
-            >
-              <button
-                onClick={() => {
-                  setTool("brush");
-                  setShowStickerPicker(false);
-                  setShowColorPicker(false);
-                }}
-                className="p-2.5"
-                style={{
-                  background: tool === "brush" ? "#F0E8DC" : "transparent",
-                  color: "#8A7060",
-                  transition: "background 0.15s",
-                }}
-                title="Brush"
-              >
-                <Pencil size={14} />
-              </button>
-              
-              {/* Eraser */}
-              <button
-                onClick={() => {
-                  setTool("eraser");
-                  setShowStickerPicker(false);
-                  setShowColorPicker(false);
-                }}
-                className="p-2.5"
-                style={{
-                  background: tool === "eraser" ? "#F0E8DC" : "transparent",
-                  color: tool === "eraser" ? "8A7060" : "#8A7060",
-                  transition: "background 0.15s",
-                }}
-                title="Eraser"
-              >
-                <Eraser size={14} />
-              </button>
-              
-              {/* Sticker */}
-              <button
-                onClick={() => {
-                  setTool("sticker");
-                  setShowStickerPicker((v) => !v);
-                  setShowColorPicker(false);
-                }}
-                className="p-2.5"
-                style={{
-                  background: tool === "sticker" ? "#F0E8DC" : "transparent",
-                  color: tool === "sticker" ? "8A7060" : "#8A7060",
-                  transition: "background 0.15s",
-                }}
-                title="Sticker"
-              >
-                <Smile size={14} />
-              </button>
-            </div>
-
-            {/* Color swatch */}
-            <motion.button
-              onClick={() => {
-                setShowColorPicker((v) => !v);
-                setShowStickerPicker(false);
-              }}
-              whileTap={{ scale: 0.9 }}
-              className="w-8 h-8 rounded-full shrink-0"
+            <span
               style={{
-                background: penColor,
-                boxShadow: showColorPicker
-                  ? `0 0 0 2.5px #FFFBF5, 0 0 0 4px ${penColor}`
-                  : `0 0 0 1.5px rgba(0,0,0,0.1)`,
-                transition: "box-shadow 0.2s",
+                fontFamily: "Nunito, sans-serif",
+                fontSize: "1.2rem",
+                color: "#664E44",
+                fontWeight: 700,
               }}
-              title="Pick color"
-            />
-
-            {/* Undo / Redo */}
-            <div className="ml-auto flex gap-1">
+            >
+              Square #{square.id + 1}
+            </span>
+            <div className="flex items-center gap-2">
               <motion.button
-                onClick={handleUndo}
-                disabled={!canUndo}
-                whileTap={canUndo ? { scale: 0.88 } : {}}
-                className="p-2 rounded-xl"
-                style={{
-                  background: canUndo ? "#F0E8DC" : "transparent",
-                  color: canUndo ? "#2D2A32" : "#D8C8B8",
-                }}
-                title="Undo"
+                onClick={handleClearCanvas}
+                whileTap={{ scale: 0.88 }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs"
+                style={{ background: "#F0E8DC", color: "#8A7060", fontFamily: "Nunito, sans-serif", fontWeight: 600 }}
               >
-                <RotateCcw size={15} />
+                <Trash2 size={12} /> Clear
               </motion.button>
               <motion.button
-                onClick={handleRedo}
-                disabled={!canRedo}
-                whileTap={canRedo ? { scale: 0.88 } : {}}
-                className="p-2 rounded-xl"
-                style={{
-                  background: canRedo ? "#F0E8DC" : "transparent",
-                  color: canRedo ? "#2D2A32" : "#D8C8B8",
-                }}
-                title="Redo"
+                onClick={onClose}
+                whileTap={{ scale: 0.88 }}
+                className="w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ background: "#dba1a2", color: "white" }}
               >
-                <RotateCw size={15} />
+                <X size={15} />
               </motion.button>
             </div>
           </div>
 
-          {/* ── Brush size slider (for drawing tools) ── */}
-          {tool === "brush" && (
+          {/* ── Scrollable body ── */}
+          <div className="overflow-y-auto flex-1 min-h-0">
+            {/* Canvas container */}
             <div
-              className="px-4 py-3 shrink-0"
-              style={{ borderBottom: "1.5px solid #F0E8DC" }}
+              ref={containerRef}
+              className="relative w-full overflow-hidden"
+              style={{ background: "#F7F0E8", lineHeight: 0 }}
             >
-              <div className="flex items-center gap-3">
-                <span
-                  style={{
-                    fontFamily: "Nunito, sans-serif",
-                    fontSize: "0.7rem",
-                    color: "#8A7060",
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    minWidth: "32px",
-                  }}
-                >
-                  Size
-                </span>
-                <input
-                  type="range"
-                  min="1"
-                  max="30"
-                  value={brushSize}
-                  onChange={(e) => setBrushSize(Number(e.target.value))}
-                  style={{
-                    flex: 1,
-                    accentColor: "#B8AB9C",
-                  }}
-                />
-                <span
-                  style={{
-                    fontFamily: "Nunito, sans-serif",
-                    fontSize: "0.75rem",
-                    color: "#2D2A32",
-                    fontWeight: 600,
-                    minWidth: "24px",
-                    textAlign: "right",
-                  }}
-                >
-                  {brushSize}
-                </span>
-              </div>
-            </div>
-          )}
+              <canvas
+                ref={canvasRef}
+                style={{
+                  display: "block",
+                  touchAction: "none",
+                  cursor: tool === "eraser" ? "cell" : tool === "text" ? "text" : "crosshair",
+                }}
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerLeave={handleCanvasPointerUp}
+              />
 
-          {/* ── Eraser size slider ── */}
-          {tool === "eraser" && (
-            <div
-              className="px-4 py-3 shrink-0"
-              style={{ borderBottom: "1.5px solid #F0E8DC" }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  style={{
-                    fontFamily: "Nunito, sans-serif",
-                    fontSize: "0.7rem",
-                    color: "#8A7060",
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    minWidth: "32px",
-                  }}
-                >
-                  Size
-                </span>
-                <input
-                  type="range"
-                  min="4"
-                  max="60"
-                  value={eraserSize}
-                  onChange={(e) => setEraserSize(Number(e.target.value))}
-                  style={{
-                    flex: 1,
-                    accentColor: "#B8AB9C",
-                  }}
-                />
-                <span
-                  style={{
-                    fontFamily: "Nunito, sans-serif",
-                    fontSize: "0.75rem",
-                    color: "#2D2A32",
-                    fontWeight: 600,
-                    minWidth: "24px",
-                    textAlign: "right",
-                  }}
-                >
-                  {eraserSize}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* ── Color picker panel ── */}
-          <AnimatePresence>
-            {showColorPicker && (
-              <motion.div
-                key="colorpicker"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden shrink-0"
-                style={{ borderBottom: "1.5px solid #F0E8DC" }}
+              {/* Objects overlay */}
+              <div
+                className="absolute inset-0"
+                style={{ pointerEvents: overlayInteractive ? "auto" : "none" }}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    setSelectedId(null);
+                    setEditingTextId(null);
+                  }
+                }}
               >
-                <div className="flex flex-col items-center gap-3 px-4 py-4">
-                  <HexColorPicker
-                    color={penColor}
-                    onChange={setPenColor}
-                    style={{ width: "100%", maxWidth: 260 }}
+                {objects.map((obj) => (
+                  <ObjectItem
+                    key={obj.id}
+                    obj={obj}
+                    containerRef={containerRef}
+                    isSelected={selectedId === obj.id}
+                    isEditing={editingTextId === obj.id}
+                    onSelect={() => {
+                      setSelectedId(obj.id);
+                      if (obj.type === "text") {
+                        setTextColor(obj.color || "#2D2A32");
+                      }
+                    }}
+                    onUpdate={(u) => updateObject(obj.id, u)}
+                    onDelete={() => deleteObject(obj.id)}
+                    onStartEdit={() => setEditingTextId(obj.id)}
+                    onEndEdit={() => setEditingTextId(null)}
                   />
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-6 h-6 rounded-full shrink-0"
-                      style={{ background: penColor, border: "1.5px solid #E8D5C4" }}
-                    />
-                    <input
-                      value={penColor}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) setPenColor(v);
-                      }}
-                      className="rounded-lg px-2 py-1 text-sm"
-                      style={{
-                        border: "1.5px solid #E8D5C4",
-                        background: "#F7F0E8",
-                        fontFamily: "Nunito, sans-serif",
-                        color: "#2D2A32",
-                        width: 90,
-                        outline: "none",
-                      }}
-                    />
-                  </div>
-                  {/* Preset swatches */}
-                  <div className="flex gap-2 flex-wrap justify-center">
-                    {[
-                      "#2D2A32","#FF6B6B","#4ECDC4","#FFD166",
-                      "#06D6A0","#6A0572","#FF9F1C","#2EC4B6",
-                      "#E71D36","#011627",
-                    ].map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => setPenColor(c)}
-                        className="rounded-full"
-                        style={{
-                          width: penColor === c ? 24 : 20,
-                          height: penColor === c ? 24 : 20,
-                          background: c,
-                          boxShadow:
-                            penColor === c
-                              ? `0 0 0 2.5px #FFFBF5, 0 0 0 4.5px ${c}`
-                              : "none",
-                          transition: "all 0.15s",
-                        }}
-                      />
-                    ))}\n                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                ))}
+              </div>
+            </div>
 
-          {/* ── Sticker picker panel ── */}
-          <AnimatePresence>
-            {showStickerPicker && (
-              <motion.div
-                key="stickerpicker"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden shrink-0"
+            {/* ── Toolbar ── */}
+            <div
+              className="px-3 py-2.5 flex items-center gap-2 flex-wrap shrink-0"
+              style={{ borderBottom: "1.5px solid #F0E8DC" }}
+            >
+              {/* Tool group */}
+              <div
+                className="flex rounded-xl overflow-hidden"
+                style={{ border: "1.5px solid #8A7060" }}
+              >
+                <button
+                  onClick={() => {
+                    setTool("brush");
+                    setShowStickerPicker(false);
+                  }}
+                  className="p-2.5"
+                  style={{
+                    background: tool === "brush" ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                    color: "#8A7060",
+                    transition: "background 0.15s",
+                  }}
+                  title="Brush"
+                >
+                  <Pencil size={14} />
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setTool("eraser");
+                    setShowStickerPicker(false);
+                    setShowColorModal(false);
+                  }}
+                  className="p-2.5"
+                  style={{
+                    background: tool === "eraser" ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                    color: "#8A7060",
+                    transition: "background 0.15s",
+                  }}
+                  title="Eraser"
+                >
+                  <Eraser size={14} />
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setTool("text");
+                    setShowStickerPicker(false);
+                  }}
+                  className="p-2.5"
+                  style={{
+                    background: tool === "text" ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                    color: "#8A7060",
+                    transition: "background 0.15s",
+                  }}
+                  title="Text"
+                >
+                  <Type size={14} />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setTool("sticker");
+                    setShowStickerPicker((v) => !v);
+                    setShowColorModal(false);
+                  }}
+                  className="p-2.5"
+                  style={{
+                    background: tool === "sticker" ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                    color: "#8A7060",
+                    transition: "background 0.15s",
+                  }}
+                  title="Sticker"
+                >
+                  <Smile size={14} />
+                </button>
+              </div>
+
+              {/* Color button for brush */}
+              {tool === "brush" && (
+                <motion.button
+                  onClick={() => setShowColorModal(true)}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg shrink-0"
+                  style={{
+                    background: "#F0E8DC",
+                    fontFamily: "Nunito, sans-serif",
+                    fontSize: "0.7rem",
+                    color: "#8A7060",
+                    fontWeight: 600,
+                  }}
+                  title="Brush color"
+                >
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{
+                      background: penColor,
+                      border: "1.5px solid rgba(0,0,0,0.1)",
+                    }}
+                  />
+                  Color
+                </motion.button>
+              )}
+
+              {/* Color button for text */}
+              {tool === "text" && (
+                <motion.button
+                  onClick={() => setShowColorModal(true)}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg shrink-0"
+                  style={{
+                    background: "#F0E8DC",
+                    fontFamily: "Nunito, sans-serif",
+                    fontSize: "0.7rem",
+                    color: "#8A7060",
+                    fontWeight: 600,
+                  }}
+                  title="Text color"
+                >
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{
+                      background: textColor,
+                      border: "1.5px solid rgba(0,0,0,0.1)",
+                    }}
+                  />
+                  Color
+                </motion.button>
+              )}
+
+              {/* Undo / Redo */}
+              <div className="ml-auto flex gap-1">
+                <motion.button
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  whileTap={canUndo ? { scale: 0.88 } : {}}
+                  className="p-2 rounded-xl"
+                  style={{
+                    background: canUndo ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                    color: canUndo ? "#2D2A32" : "#D8C8B8",
+                  }}
+                  title="Undo"
+                >
+                  <RotateCcw size={15} />
+                </motion.button>
+                <motion.button
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  whileTap={canRedo ? { scale: 0.88 } : {}}
+                  className="p-2 rounded-xl"
+                  style={{
+                    background: canRedo ? "#F0E8DC" : "rgba(247, 240, 232, 0)",
+                    color: canRedo ? "#2D2A32" : "#D8C8B8",
+                  }}
+                  title="Redo"
+                >
+                  <RotateCw size={15} />
+                </motion.button>
+              </div>
+            </div>
+
+            {/* ── Brush size slider ── */}
+            {tool === "brush" && (
+              <div
+                className="px-4 py-3 shrink-0"
                 style={{ borderBottom: "1.5px solid #F0E8DC" }}
               >
-                <div className="p-3 grid grid-cols-8 gap-1.5">
-                  {STICKERS.map((emoji) => (
-                    <motion.button
-                      key={emoji}
-                      onClick={() => addStickerObject(emoji)}
-                      whileTap={{ scale: 0.82 }}
-                      className="flex items-center justify-center rounded-xl aspect-square"
-                      style={{ fontSize: "1.5rem", background: "#F7F0E8" }}
-                    >
-                      {emoji}
-                    </motion.button>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <span
+                    style={{
+                      fontFamily: "Nunito, sans-serif",
+                      fontSize: "0.7rem",
+                      color: "#8A7060",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      minWidth: "32px",
+                    }}
+                  >
+                    Size
+                  </span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="30"
+                    value={brushSize}
+                    onChange={(e) => setBrushSize(Number(e.target.value))}
+                    style={{
+                      flex: 1,
+                      accentColor: "#B8AB9C",
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontFamily: "Nunito, sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#2D2A32",
+                      fontWeight: 600,
+                      minWidth: "24px",
+                      textAlign: "right",
+                    }}
+                  >
+                    {brushSize}
+                  </span>
                 </div>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
-        </div>
 
-        {/* ── Save button ── */}
-        <div
-          className="px-4 pb-6 pt-3 shrink-0"
-          style={{ borderTop: "1.5px solid #F0E8DC" }}
-        >
-          <motion.button
-            onClick={handleSave}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            className="w-full py-3.5 rounded-2xl"
-            style={{
-              background: "#8A7060",
-              color: "white",
-              fontFamily: "Nunito, sans-serif",
-              fontWeight: 700,
-              fontSize: "1rem",
-              letterSpacing: "0.02em",
-              transition: "background 0.3s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#6E594A";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "#8A7060";
-            }}
+            {/* ── Eraser size slider ── */}
+            {tool === "eraser" && (
+              <div
+                className="px-4 py-3 shrink-0"
+                style={{ borderBottom: "1.5px solid #F0E8DC" }}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    style={{
+                      fontFamily: "Nunito, sans-serif",
+                      fontSize: "0.7rem",
+                      color: "#8A7060",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      minWidth: "32px",
+                    }}
+                  >
+                    Size
+                  </span>
+                  <input
+                    type="range"
+                    min="4"
+                    max="60"
+                    value={eraserSize}
+                    onChange={(e) => setEraserSize(Number(e.target.value))}
+                    style={{
+                      flex: 1,
+                      accentColor: "#B8AB9C",
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontFamily: "Nunito, sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#2D2A32",
+                      fontWeight: 600,
+                      minWidth: "24px",
+                      textAlign: "right",
+                    }}
+                  >
+                    {eraserSize}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* ── Sticker picker panel ── */}
+            <AnimatePresence>
+              {showStickerPicker && (
+                <motion.div
+                  key="stickerpicker"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden shrink-0"
+                  style={{ borderBottom: "1.5px solid #F0E8DC" }}
+                >
+                  <div className="p-3 grid grid-cols-8 gap-1.5">
+                    {STICKERS.map((emoji) => (
+                      <motion.button
+                        key={emoji}
+                        onClick={() => addStickerObject(emoji)}
+                        whileTap={{ scale: 0.82 }}
+                        className="flex items-center justify-center rounded-xl aspect-square"
+                        style={{ fontSize: "1.5rem", background: "#F7F0E8" }}
+                      >
+                        {emoji}
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Save button ── */}
+          <div
+            className="px-4 pb-6 pt-3 shrink-0"
+            style={{ borderTop: "1.5px solid #F0E8DC" }}
           >
-            Save Square ✓
-          </motion.button>
-        </div>
+            <motion.button
+              onClick={handleSave}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              className="w-full py-3.5 rounded-2xl"
+              style={{
+                background: "#8A7060",
+                color: "white",
+                fontFamily: "Nunito, sans-serif",
+                fontWeight: 700,
+                fontSize: "1rem",
+                letterSpacing: "0.02em",
+                transition: "background 0.3s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#6E594A";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#8A7060";
+              }}
+            >
+              Save Square ✓
+            </motion.button>
+          </div>
+        </motion.div>
       </motion.div>
-    </motion.div>
+
+      {/* Color Picker Modal - shared between brush and text */}
+      <AnimatePresence>
+        {showColorModal && (
+          <ColorPickerModal
+            isOpen={showColorModal}
+            color={getCurrentColor()}
+            onColorChange={handleColorChange}
+            onClose={() => setShowColorModal(false)}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
