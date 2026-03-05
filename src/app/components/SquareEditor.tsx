@@ -326,6 +326,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
     }
     
     e.preventDefault();
+    e.stopPropagation();
     setSelectedId(null);
     setShowColorModal(false);
     isDrawingRef.current = true;
@@ -501,7 +502,11 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        style={{ background: "rgba(45,42,50,0.6)", backdropFilter: "blur(5px)" }}
+        style={{ 
+          background: "rgba(45,42,50,0.6)", 
+          backdropFilter: "blur(5px)",
+          pointerEvents: "auto",
+        }}
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
         }}
@@ -541,7 +546,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
                 fontWeight: 700,
               }}
             >
-              Square #{square.id + 1}
+              Goal #{square.id + 1}
             </span>
             <div className="flex items-center gap-2">
               <motion.button
@@ -875,7 +880,7 @@ export function SquareEditor({ square, onSave, onClose }: SquareEditorProps) {
                 e.currentTarget.style.background = "#8A7060";
               }}
             >
-              Save Square ✓
+              Save Goal ✓
             </motion.button>
           </div>
         </motion.div>

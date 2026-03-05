@@ -189,22 +189,6 @@ export default function App() {
     setLiveSquares(newSquares);
   };
 
-  const reorderSquares = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    
-    setLiveSquares((prev) => {
-      const newSquares = [...prev];
-      const [movedSquare] = newSquares.splice(fromIndex, 1);
-      newSquares.splice(toIndex, 0, movedSquare);
-      
-      // Update IDs to match new positions
-      return newSquares.map((sq, index) => ({
-        ...sq,
-        id: index,
-      }));
-    });
-  };
-
   return (
     <div className="min-h-screen w-full" style={{ fontFamily: "Nunito, sans-serif" }}>
       <AnimatePresence mode="wait">
@@ -218,7 +202,6 @@ export default function App() {
             gridSize={gridSize}
             updateSquare={updateSquare}
             onGridSizeChange={handleGridSizeChange}
-            onReorder={reorderSquares}
             onDone={() => setScreen("stamp")}
           />
         )}
